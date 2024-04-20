@@ -985,6 +985,11 @@ func PassiveConnectionListener() {
 			MConnectionsComp[con.id_comp] = &con
 			MConnMutex.Unlock()
 			con.conmode = CON_TYPE_PASSIVE
+
+			// Server -> Client connection result send
+			outConnectResultData := []byte{ 0xC1, 0x04, 0x00, 0x01 };
+			PutMessage(ac, &con, outConnectResultData);
+
 			go HandleConnection(&con)
 		}
 	}

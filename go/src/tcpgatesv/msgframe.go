@@ -64,7 +64,8 @@ func ConfigureNumberOfBytes(ac *atmi.ATMICtx) error {
 	var n int
 	first := true
 
-	ac.TpLogInfo("Framing mode from config [%s]", MFraming)
+	ac.TpLogInfo("Framing[C1] mode from config [%s]", MFraming)
+	ac.TpLogInfo("Framing[C2] mode from config [%s]", MFramingC2)
 
 	for _, r := range MFraming {
 		if first {
@@ -80,6 +81,23 @@ func ConfigureNumberOfBytes(ac *atmi.ATMICtx) error {
 
 	MFramingCode = c
 	MFramingLen = n
+
+	n = 0
+
+	for _, r := range MFramingC2 {
+		if first {
+			c = r
+		} else if c != r {
+			ac.TpLogError("Different symbols in message framing: [" +
+				string(c) + "] and [" + string(r) + "]")
+			return errors.New("Different symbols in message framing: [" +
+				string(c) + "] and [" + string(r) + "]")
+		}
+		n++
+	}
+
+	MFramingC2Code = c
+	MFramingC2Len = n
 
 	switch MFramingCode {
 	case FRAME_LITTLE_ENDIAN:
@@ -135,7 +153,31 @@ func ConfigureNumberOfBytes(ac *atmi.ATMICtx) error {
 		return errors.New("Invalid message framing...")
 	}
 
+	//This is extended message framing for muOnline-enduroX
+	switch MFramingC2Code {
+	case FRAME_LITTLE_ENDIAN:
+		ac.TpLogInfo("[C2]Little endian mode, %d bytes, " +
+			"does not include prefix len", MFramingC2Len)
+		break
+	case FRAME_LITTLE_ENDIAN_ILEN:
+		ac.TpLogInfo("[C2]Little endian mode, %d bytes, " +
+			"does include prefix len", MFramingC2Len)
+		break
+	case FRAME_BIG_ENDIAN:
+	case FRAME_BIG_ENDIAN_ILEN:
+	case FRAME_ASCII:
+	case FRAME_ASCII_ILEN:
+	case FRAME_DELIM_STOP:
+	case FRAME_DELIM_BOTH:
+		// currently not used
+		break
+	default:
+		ac.TpLogError("Invalid framing...")
+		return errors.New("Invalid message framing...")
+	}
+
 	MFramingLenReal = MFramingLen
+	MFramingC2LenReal = MFramingC2Len
 
 	if MFramingLen > 0 && MFramingOffset > 0 {
 		ac.TpLogInfo("Incrementing message prefix len from %d to %d due to offset",
@@ -144,8 +186,14 @@ func ConfigureNumberOfBytes(ac *atmi.ATMICtx) error {
 		MFramingLen += MFramingOffset
 	}
 
-	ac.TpLogInfo("Framing header bytes %d len bytes %d", MFramingLen, MFramingLenReal)
+	if MFramingC2Len > 0 && MFramingOffset > 0 {
+		ac.TpLogInfo("[C2]Incrementing message prefix len from %d to %d due to offset",
+			MFramingC2Len, MFramingC2Len+MFramingOffset)
 
+		MFramingC2Len += MFramingOffset
+	}
+
+	ac.TpLogInfo("Framing header bytes %d[%d] len bytes %d[%d]", MFramingLen, MFramingC2Len, MFramingLenReal, MFramingC2LenReal)
 	return nil
 }
 
@@ -154,31 +202,55 @@ func ConfigureNumberOfBytes(ac *atmi.ATMICtx) error {
 //@return <Binary message read>, <Error or nil>
 func GetMessage(ac *atmi.ATMICtx, con *ExCon) ([]byte, error) {
 
-	if MFramingLen > 0 {
+	var localFramingLen int
+	var localFramingReadLen int
+	var localFramingLenReal int
+	
+	if MFramingLen > MFramingC2Len {
+		localFramingLen = MFramingLen
+		localFramingReadLen = MFramingLen
+		localFramingLenReal = MFramingLenReal
+	} else {
+		localFramingLen = MFramingC2Len
+		localFramingReadLen = MFramingC2Len
+		localFramingLenReal = MFramingC2LenReal
+	}
 
-		header := make([]byte, MFramingLen)
-		headerSwapped := make([]byte, MFramingLen)
+	if localFramingLen > 0 {
+
+		header := make([]byte, localFramingLen)
+		headerSwapped := make([]byte, localFramingLen)
 		var mlen int64 = 0
 		var mlenStr = ""
 
-		ac.TpLogError("Reading %d number of bytes as header", MFramingLen)
+		ac.TpLogError("Reading %d number of bytes as header", localFramingLen)
 
 		//Read number of bytes, or up till the symbol
 		n, err := io.ReadFull(con.reader, header)
 
 		if nil != err {
 			ac.TpLogError("Failed to read header of %d bytes: %s",
-				MFramingLen, err)
+			localFramingLen, err)
 			return nil, err
 		}
 
-		if n != MFramingLen {
+		if n != localFramingLen {
 
 			emsg := fmt.Sprintf("Invlid header len read, expected: %d got %d",
-				MFramingLen, n)
+			localFramingLen, n)
 			ac.TpLogError("%s", emsg)
 			return nil, errors.New(emsg)
 		}
+
+		if header[0] == 0xC1 || header[0] == 0xC3 {
+			localFramingLen = MFramingLen
+			localFramingLenReal = MFramingLenReal
+		} else if header[0] == 0xC2 || header[0] == 0xC4 {
+			localFramingLen = MFramingC2Len
+			localFramingLenReal = MFramingC2LenReal
+		}
+
+		ac.TpLogInfo("Got header, %02X, framing len %d, framing real len %d", header[0], localFramingLen, localFramingLenReal)
 
 		//Copy off header bytes for swap manipulations
 		copy(headerSwapped, header[:])
@@ -187,7 +259,7 @@ func GetMessage(ac *atmi.ATMICtx, con *ExCon) ([]byte, error) {
 		if MFramingHalfSwap {
 			ac.TpLogDump(atmi.LOG_DEBUG, "Got message prefix (before swapping)",
 				headerSwapped, len(headerSwapped))
-			half := MFramingLenReal / 2
+			half := localFramingLenReal / 2
 			for i := 0; i < half; i++ {
 				tmp := headerSwapped[MFramingOffset+i]
 				headerSwapped[MFramingOffset+i] = headerSwapped[MFramingOffset+half+i]
@@ -201,7 +273,7 @@ func GetMessage(ac *atmi.ATMICtx, con *ExCon) ([]byte, error) {
 		//Decode the length now...
 		if MFramingCode != FRAME_ASCII && MFramingCode != FRAME_ASCII_ILEN {
 
-			for i := MFramingOffset; i < MFramingLen; i++ {
+			for i := MFramingOffset; i < localFramingLen; i++ {
 				//Move the current byte to front
 				mlen <<= 8
 				switch MFramingCode {
@@ -211,7 +283,7 @@ func GetMessage(ac *atmi.ATMICtx, con *ExCon) ([]byte, error) {
 					break
 				case FRAME_BIG_ENDIAN, FRAME_BIG_ENDIAN_ILEN:
 					//Add current byte, but take from older
-					mlen |= int64(headerSwapped[int(MFramingLen-1)-i])
+					mlen |= int64(headerSwapped[int(localFramingLen-1)-i])
 					break
 				}
 			}
@@ -235,7 +307,7 @@ func GetMessage(ac *atmi.ATMICtx, con *ExCon) ([]byte, error) {
 		}
 
 		if MFamingInclPfxLen {
-			mlen -= int64(MFramingLen)
+			mlen -= int64(localFramingReadLen)
 		}
 
 		ac.TpLogInfo("Got header, indicating message len to read: %d", mlen)
@@ -342,47 +414,59 @@ func GetMessage(ac *atmi.ATMICtx, con *ExCon) ([]byte, error) {
 //Put message on socket
 func PutMessage(ac *atmi.ATMICtx, con *ExCon, data []byte) error {
 
+	var localFramingLen int
+	var localFramingLenReal int
+	
+	
+	if data[0] == 0xC1 || data[0] == 0xC3 {
+		localFramingLen = MFramingLen
+		localFramingLenReal = MFramingLenReal
+	} else if data[0] == 0xC2 || data[0] == 0xC4 {
+		localFramingLen = MFramingC2Len
+		localFramingLenReal = MFramingC2LenReal
+	}
+
 	ac.TpLogInfo("Building outgoing message: len hdr bytes %d (real: %d)",
-		MFramingLen, MFramingLenReal)
+		localFramingLen, localFramingLenReal)
 
 	ac.TpLogDump(atmi.LOG_DEBUG, "Preparing message for sending",
 		data, len(data))
 
-	if MFramingLen > 0 {
+	if localFramingLen > 0 {
 		var mlen int64 = int64(len(data))
-		header := make([]byte, MFramingLenReal)
+		header := make([]byte, localFramingLenReal)
 
 		//Test that we have a place for length bytes to be installed
-		if MFramingKeepHdr && mlen < int64(MFramingLen) {
+		if MFramingKeepHdr && mlen < int64(localFramingLen) {
 			errMsg := fmt.Sprintf("No space outoing message to install offset/len "+
 				"pfx: offset: %d pfx len: %d full header: %d",
-				MFramingOffset, MFramingLenReal, MFramingLen)
+				MFramingOffset, localFramingLenReal, localFramingLen)
 			ac.TpLogError(errMsg)
 			return errors.New(errMsg)
 		}
 
 		if MFamingInclPfxLen {
 			if !MFramingKeepHdr {
-				mlen += int64(MFramingLen)
+				mlen += int64(localFramingLen)
 			}
 		} else {
 
 			if MFramingKeepHdr {
 				//Do not include length bytes including offset as this is already
 				//filled init
-				mlen -= int64(MFramingLen)
+				mlen -= int64(localFramingLen)
 			}
 		}
 
-		ac.TpLogDebug("Message len set to %d", mlen)
+		ac.TpLogDebug("Message len set to %d (%d - %d)", mlen, header[0], localFramingLenReal)
 
 		//Generate the header
 		if MFramingCode != FRAME_ASCII && MFramingCode != FRAME_ASCII_ILEN {
-			for i := 0; i < MFramingLenReal; i++ {
+			for i := 0; i < localFramingLenReal; i++ {
 				switch MFramingCode {
 				case FRAME_LITTLE_ENDIAN, FRAME_LITTLE_ENDIAN_ILEN:
 					//So the least significant byte goes to end the array
-					header[(MFramingLenReal-1)-i] = byte(mlen & 0xff)
+					header[(localFramingLenReal-1)-i] = byte(mlen & 0xff)
 					break
 				case FRAME_BIG_ENDIAN, FRAME_BIG_ENDIAN_ILEN:
 					//So the least significant byte goes in front of the array
@@ -394,7 +478,7 @@ func PutMessage(ac *atmi.ATMICtx, con *ExCon, data []byte) error {
 			}
 
 		} else {
-			mlenStr := fmt.Sprintf("%0*d", MFramingLen, mlen)
+			mlenStr := fmt.Sprintf("%0*d", localFramingLen, mlen)
 			header = []byte(mlenStr)
 		}
 
@@ -402,7 +486,7 @@ func PutMessage(ac *atmi.ATMICtx, con *ExCon, data []byte) error {
 		if MFramingHalfSwap {
 			ac.TpLogDump(atmi.LOG_INFO, "Built message header (before swapping)",
 				header, len(header))
-			half := MFramingLenReal / 2
+			half := localFramingLenReal / 2
 			for i := 0; i < half; i++ {
 				tmp := header[i]
 				header[i] = header[half+i]
@@ -421,7 +505,7 @@ func PutMessage(ac *atmi.ATMICtx, con *ExCon, data []byte) error {
 
 			//In this case at specific offset we need to copy data from prepared
 			//len bytes
-			for i := 0; i < MFramingLenReal; i++ {
+			for i := 0; i < localFramingLenReal; i++ {
 				data[MFramingOffset+i] = header[i]
 			}
 

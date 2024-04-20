@@ -102,6 +102,11 @@ var MFramingHalfSwap bool = false  //Should we swap on the half incoming length 
 var MFramingKeepHdr bool = false   //Should we keep the len header?
 //This does count in the header
 var MFramingOffset int = 0 //Number of bytes to ignore after which header follows
+//This is extended message framing for muOnline-enduroX
+var MFramingC2 string = "llll"
+var MFramingC2Code rune = FRAME_LITTLE_ENDIAN
+var MFramingC2Len int = len(MFramingC2)
+var MFramingC2LenReal int = len(MFramingC2)
 
 //In case if framing is "d"
 var MDelimStart byte = 0x02       //can be optional
@@ -320,6 +325,10 @@ func Init(ac *atmi.ATMICtx) int {
 		case "framing":
 			MFraming, _ = buf.BGetString(u.EX_CC_VALUE, occ)
 			ac.TpLogDebug("Got [%s] = [%s] ", fldName, MFraming)
+			break
+		case "framingC2":
+			MFramingC2, _ = buf.BGetString(u.EX_CC_VALUE, occ)
+			ac.TpLogDebug("Got [%s] = [%s] ", fldName, MFramingC2)
 			break
 		case "framing_half_swap":
 			tmpSwap, _ := buf.BGetInt(u.EX_CC_VALUE, occ)
