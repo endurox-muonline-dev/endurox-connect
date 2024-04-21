@@ -1,35 +1,35 @@
 /**
- * @brief This module is responsible for connections handling
- *
- * @file tcpgatesv.go
- */
+* @brief This module is responsible for connections handling
+*
+* @file tcpgatesv.go
+*/
 /* -----------------------------------------------------------------------------
- * Enduro/X Middleware Platform for Distributed Transaction Processing
- * Copyright (C) 2009-2016, ATR Baltic, Ltd. All Rights Reserved.
- * Copyright (C) 2017-2018, Mavimax, Ltd. All Rights Reserved.
- * This software is released under one of the following licenses:
- * AGPL or Mavimax's license for commercial use.
- * -----------------------------------------------------------------------------
- * AGPL license:
- *
- * This program is free software; you can redistribute it and/or modify it under
- * the terms of the GNU Affero General Public License, version 3 as published
- * by the Free Software Foundation;
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT ANY
- * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
- * PARTICULAR PURPOSE. See the GNU Affero General Public License, version 3
- * for more details.
- *
- * You should have received a copy of the GNU Affero General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
- *
- * -----------------------------------------------------------------------------
- * A commercial use license is available from Mavimax, Ltd
- * contact@mavimax.com
- * -----------------------------------------------------------------------------
- */
+* Enduro/X Middleware Platform for Distributed Transaction Processing
+* Copyright (C) 2009-2016, ATR Baltic, Ltd. All Rights Reserved.
+* Copyright (C) 2017-2018, Mavimax, Ltd. All Rights Reserved.
+* This software is released under one of the following licenses:
+* AGPL or Mavimax's license for commercial use.
+* -----------------------------------------------------------------------------
+* AGPL license:
+*
+* This program is free software; you can redistribute it and/or modify it under
+* the terms of the GNU Affero General Public License, version 3 as published
+* by the Free Software Foundation;
+*
+* This program is distributed in the hope that it will be useful, but WITHOUT ANY
+* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+* PARTICULAR PURPOSE. See the GNU Affero General Public License, version 3
+* for more details.
+*
+* You should have received a copy of the GNU Affero General Public License along
+* with this program; if not, write to the Free Software Foundation, Inc.,
+* 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+*
+* -----------------------------------------------------------------------------
+* A commercial use license is available from Mavimax, Ltd
+* contact@mavimax.com
+* -----------------------------------------------------------------------------
+*/
 package main
 
 import (
@@ -102,6 +102,7 @@ var MFramingHalfSwap bool = false  //Should we swap on the half incoming length 
 var MFramingKeepHdr bool = false   //Should we keep the len header?
 //This does count in the header
 var MFramingOffset int = 0 //Number of bytes to ignore after which header follows
+
 //This is extended message framing for muOnline-enduroX
 var MFramingC2 string = "llll"
 var MFramingC2Code rune = FRAME_LITTLE_ENDIAN
@@ -179,9 +180,9 @@ func TCPGATE(ac *atmi.ATMICtx, svc *atmi.TPSVCINFO) {
 		ac.TpLogCloseReqFile()
 		if SUCCEED == ret {
 			/* ac.TpContinue() - No need for this
-			 * Or it have nothing todo.
-			 * as operation  must be last.
-			 */
+			* Or it have nothing todo.
+			* as operation  must be last.
+			*/
 			ac.TpContinue()
 		} else {
 			ac.TpReturn(atmi.TPFAIL, 0, &svc.Data, 0)
@@ -817,8 +818,8 @@ func Uninit(ac *atmi.ATMICtx) {
 	}
 
 	//Close any open connection
-    //Wait on connection go-routines to complete
-    //We can just push to those routines a shutdown message and wait...
+	//Wait on connection go-routines to complete
+	//We can just push to those routines a shutdown message and wait...
 	CloseAllConnections(ac)
 
 	//We will close all atmi contexts, but we will not reply to them,
